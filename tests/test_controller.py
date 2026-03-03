@@ -1,0 +1,81 @@
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+from app.chat.controller import ChatController
+from app.chat.session import ClaimSession
+
+@pytest.fixture
+def session():
+    return ClaimSession(session_id="test-session")
+
+@pytest.fixture
+def mock_openai_response():
+    mock = MagicMock()
+    mock.choices = [
+        MagicMock(
+            message=MagicMock(
+                content='{"message": "What is your policy number?", "extracted_fields": {}}'
+            )
+        )
+    ]
+    return mock
+
+@pytest.fixture
+def mock_openai_with_extraction():
+    mock = MagicMock()
+    mock.choices = [
+        MagicMock(
+            message=MagicMock(
+                content='{"message": "Got it! Policy POL-123.", "extracted_fields": {"policy_number": "POL-123"}}'
+            )
+        )
+    ]
+    return mock
+
+@pytest.mark.asyncio
+async def test_handle_message_asks_question(session, mock_openai_response):
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(return_value=mock_openai_response)
+    with patch("app.chat.controller.AsyncOpenAI", return_value=mock_client):
+        controller = ChatController(openai_api_key="test-key")
+        response = await controller.handle_message(session, "hello")
+    assert response["type"] == "bot_message"
+    assert "policy number" in response["content"].lower()
+    assert len(session.chat_history) == 2
+
+@pytest.mark.asyncio
+async def test_handle_message_extracts_field(session, mock_openai_with_extraction):
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(return_value=mock_openai_with_extraction)
+    with patch("app.chat.controller.AsyncOpenAI", return_value=mock_client):
+        controller = ChatController(openai_api_key="test-key")
+        response = await controller.handle_message(session, "My policy is POL-123")
+    assert session.collected_fields.get("policy_number") == "POL-123"
+    assert "policy_number" not in session.missing_fields
+
+@pytest.mark.asyncio
+async def test_handle_message_triggers_validation():
+    session = ClaimSession(session_id="test")
+    for field in ["policy_number", "claim_type", "incident_date", "claim_amount"]:
+        session.update_field(field, "test-value")
+    mock_response = MagicMock()
+    mock_response.choices = [
+        MagicMock(
+            message=MagicMock(
+                content='{"message": "Got it!", "extracted_fields": {"incident_description": "car crash"}}'
+            )
+        )
+    ]
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+    with patch("app.chat.controller.AsyncOpenAI", return_value=mock_client):
+        controller = ChatController(openai_api_key="test-key")
+        response = await controller.handle_message(session, "A car crash on the highway")
+    assert session.status == "complete"
+    assert session.validation_result is not None
+    assert response["type"] == "validation_result"
+
+def test_get_welcome_message():
+    controller = ChatController(openai_api_key="test-key")
+    msg = controller.get_welcome_message()
+    assert "claim" in msg["content"].lower()
+    assert msg["type"] == "bot_message"
