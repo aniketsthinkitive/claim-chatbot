@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(claude:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(git init:*)",
+      "Bash(python3:*)",
+      "Bash(git add:*)"
+    ]
+  },
+  "enabledPlugins": {
+    "superpowers-developing-for-claude-code@superpowers-marketplace": true
+  }
+}
