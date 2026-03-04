@@ -17,6 +17,10 @@ class DocumentProcessor:
         tree = self.get_document_tree(doc_id)
         return self._tree_to_text(tree)
 
+    def get_document_ocr(self, doc_id: str) -> str:
+        result = self.client.get_ocr(doc_id, format="raw")
+        return result.get("result", "")
+
     def _tree_to_text(self, node: dict, depth: int = 0) -> str:
         lines = []
         indent = "  " * depth

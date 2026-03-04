@@ -45,3 +45,14 @@ def test_processor_get_document_text(mock_pi_client):
         text = processor.get_document_text("doc-123")
         assert "Policy Information" in text
         assert "Incident Details" in text
+
+def test_processor_get_document_ocr(mock_pi_client):
+    mock_pi_client.get_ocr.return_value = {
+        "result": "Patient: John Doe\nDOB: 1985-03-15\nNPI: 1245319599\nDiagnosis: J06.9"
+    }
+    with patch("app.documents.processor.PageIndexClient", return_value=mock_pi_client):
+        processor = DocumentProcessor(api_key="test-key")
+        ocr_text = processor.get_document_ocr("doc-123")
+        assert "John Doe" in ocr_text
+        assert "1245319599" in ocr_text
+        mock_pi_client.get_ocr.assert_called_once_with("doc-123", format="raw")
