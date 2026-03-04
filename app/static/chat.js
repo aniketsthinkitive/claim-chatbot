@@ -20,6 +20,16 @@ function connect() {
         if (data.session_id) {
             sessionId = data.session_id;
         }
+
+        if (data.type === "progress") {
+            showProgress(data);
+            return;
+        }
+        if (data.type === "progress_done") {
+            hideProgress(data.message);
+            return;
+        }
+
         removeTypingIndicator();
 
         if (data.type === "bot_message") {
@@ -87,6 +97,62 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+function showProgress(data) {
+    let container = document.getElementById("progress-container");
+    if (!container) {
+        container = document.createElement("div");
+        container.id = "progress-container";
+        container.classList.add("message", "bot", "progress-box");
+        container.innerHTML =
+            '<div class="progress-title">Processing Document</div>' +
+            '<div class="progress-steps"></div>' +
+            '<div class="progress-bar-track"><div class="progress-bar-fill"></div></div>' +
+            '<div class="progress-message"></div>';
+        messagesDiv.appendChild(container);
+    }
+
+    const steps = container.querySelector(".progress-steps");
+    const fill = container.querySelector(".progress-bar-fill");
+    const msg = container.querySelector(".progress-message");
+
+    // Build step indicators
+    let stepsHtml = "";
+    for (let i = 1; i <= data.total_steps; i++) {
+        let cls = "step-dot";
+        if (i < data.step) cls += " done";
+        else if (i === data.step) cls += " active";
+        stepsHtml += '<span class="' + cls + '">' + i + "</span>";
+    }
+    steps.innerHTML = stepsHtml;
+
+    // Overall progress: each step is 25%, with sub-percent for step 2
+    let pct;
+    if (data.percent !== undefined && data.step === 2) {
+        pct = 25 + (data.percent / 100) * 25;
+    } else {
+        pct = (data.step / data.total_steps) * 100;
+    }
+    fill.style.width = Math.min(pct, 95) + "%";
+    msg.textContent = data.message;
+
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+function hideProgress(doneMessage) {
+    const container = document.getElementById("progress-container");
+    if (container) {
+        const fill = container.querySelector(".progress-bar-fill");
+        const msg = container.querySelector(".progress-message");
+        if (fill) fill.style.width = "100%";
+        if (msg) msg.textContent = doneMessage || "Done!";
+
+        // Remove after a short delay
+        setTimeout(() => {
+            container.remove();
+        }, 1500);
+    }
+}
+
 function showTypingIndicator() {
     const div = document.createElement("div");
     div.classList.add("typing-indicator");
@@ -128,13 +194,12 @@ async function uploadFile(file) {
         const data = await response.json();
         fileName.textContent = "Uploaded: " + file.name;
 
-        if (data.response) {
-            if (data.response.type === "validation_result") {
-                addMessage(data.response.content, "bot");
-                addValidationResult(data.response.result);
-            } else {
-                addMessage(data.response.content, "bot");
-            }
+        // Trigger extraction via WebSocket with progress
+        if (data.file_path && ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+                type: "process_document",
+                file_path: data.file_path,
+            }));
         }
     } catch (err) {
         fileName.textContent = "Upload failed";

@@ -1,6 +1,7 @@
 import os
 import json
 import uuid
+import asyncio
 import logging
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException
 
@@ -52,32 +53,105 @@ async def upload_document(file: UploadFile = File(...), session_id: str = Form("
 
     session.uploaded_documents.append(file_path)
 
-    extracted_fields = {}
+    # Return immediately — extraction happens via WebSocket
+    return {"file_id": file_id, "file_path": file_path}
+
+
+async def process_document_with_progress(websocket: WebSocket, session, file_path: str):
+    """Process uploaded document with real-time progress updates via WebSocket."""
     try:
+        # Step 1: Submit to PageIndex
+        await websocket.send_json({
+            "type": "progress",
+            "step": 1,
+            "total_steps": 4,
+            "message": "Submitting document for processing...",
+        })
+
         processor = DocumentProcessor(api_key=settings.pageindex_api_key)
         doc_id = processor.index_document(file_path)
-        logger.info(f"Document submitted to PageIndex: {doc_id}")
 
-        # Wait for PageIndex to finish processing (takes ~10s)
-        ready = processor.wait_until_ready(doc_id, max_wait=60, poll_interval=3)
+        # Step 2: Wait for processing with progress updates
+        await websocket.send_json({
+            "type": "progress",
+            "step": 2,
+            "total_steps": 4,
+            "message": "Processing document (this takes ~10-15 seconds)...",
+        })
+
+        max_wait = 60
+        poll_interval = 3
+        elapsed = 0
+        ready = False
+        while elapsed < max_wait:
+            result = processor.client.get_tree(doc_id, node_summary=False)
+            status = result.get("status", "")
+            if status == "completed" and result.get("retrieval_ready"):
+                ready = True
+                break
+            if status == "failed":
+                break
+            elapsed += poll_interval
+            pct = min(95, int((elapsed / 15) * 100))
+            await websocket.send_json({
+                "type": "progress",
+                "step": 2,
+                "total_steps": 4,
+                "message": f"Processing document... {pct}%",
+                "percent": pct,
+            })
+            await asyncio.sleep(poll_interval)
+
         if not ready:
-            logger.warning(f"Document {doc_id} not ready, proceeding with empty extraction")
-        else:
-            # Get both tree text and OCR for maximum extraction context
-            tree_text = processor.get_document_text(doc_id)
-            ocr_text = processor.get_document_ocr(doc_id)
+            await websocket.send_json({
+                "type": "bot_message",
+                "content": "Document processing timed out. Let's fill in the information manually.",
+            })
+            return
 
-            # Combine both sources for the LLM
-            combined_text = f"=== DOCUMENT STRUCTURE ===\n{tree_text}\n\n=== RAW OCR TEXT ===\n{ocr_text}"
+        # Step 3: Extract text
+        await websocket.send_json({
+            "type": "progress",
+            "step": 3,
+            "total_steps": 4,
+            "message": "Reading document content...",
+        })
 
-            extractor = FieldExtractor()
-            extracted_fields = await extractor.extract_fields(combined_text)
-            logger.info(f"Extracted {len(extracted_fields)} fields from document")
+        tree_text = processor.get_document_text(doc_id)
+        ocr_text = processor.get_document_ocr(doc_id)
+        combined_text = f"=== DOCUMENT STRUCTURE ===\n{tree_text}\n\n=== RAW OCR TEXT ===\n{ocr_text}"
+
+        # Step 4: LLM extraction
+        await websocket.send_json({
+            "type": "progress",
+            "step": 4,
+            "total_steps": 4,
+            "message": "Extracting claim fields with AI...",
+        })
+
+        extractor = FieldExtractor()
+        extracted_fields = await extractor.extract_fields(combined_text)
+
+        # Done — send extraction complete
+        await websocket.send_json({
+            "type": "progress_done",
+            "message": f"Extracted {len(extracted_fields)} fields from document!",
+        })
+
+        # Process extracted fields through controller
+        response = await chat_controller.handle_document_upload(session, extracted_fields)
+        await websocket.send_json(response)
+
     except Exception as e:
         logger.error(f"Document processing failed: {e}", exc_info=True)
-
-    response = await chat_controller.handle_document_upload(session, extracted_fields)
-    return {"file_id": file_id, "response": response}
+        await websocket.send_json({
+            "type": "progress_done",
+            "message": "Processing failed",
+        })
+        await websocket.send_json({
+            "type": "bot_message",
+            "content": f"Sorry, document processing failed: {e}. Let's fill in the information manually.",
+        })
 
 
 @app.websocket("/ws/chat")
@@ -103,12 +177,11 @@ async def websocket_chat(websocket: WebSocket):
                         session, data.get("content", "")
                     )
                     await websocket.send_json(response)
-                elif msg_type == "upload_complete":
-                    file_id = data.get("file_id", "")
-                    await websocket.send_json({
-                        "type": "bot_message",
-                        "content": "Document received! Analyzing...",
-                    })
+                elif msg_type == "process_document":
+                    file_path = data.get("file_path", "")
+                    await process_document_with_progress(
+                        websocket, session, file_path
+                    )
             except Exception as e:
                 logger.error(f"Error processing message: {e}", exc_info=True)
                 await websocket.send_json({

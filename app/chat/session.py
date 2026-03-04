@@ -17,7 +17,7 @@ class ClaimSession(BaseModel):
     validation_result: dict | None = None
     chat_history: list[dict] = Field(default_factory=list)
 
-    def update_field(self, field_name: str, value: str) -> None:
+    def update_field(self, field_name: str, value) -> None:
         self.collected_fields[field_name] = value
         if field_name in self.missing_fields:
             self.missing_fields.remove(field_name)
@@ -27,6 +27,41 @@ class ClaimSession(BaseModel):
 
     def add_message(self, role: str, content: str) -> None:
         self.chat_history.append({"role": role, "content": content})
+
+    def build_claim_payload(self) -> dict:
+        """Build the final ClaimMD API payload from collected fields."""
+        f = self.collected_fields
+
+        diagnosis_codes = f.get("diagnosis_codes", [])
+        lines = f.get("service_lines", [])
+
+        # Ensure place_of_service is on each line
+        default_pos = f.get("place_of_service", "11")
+        for line in lines:
+            if "place_of_service" not in line:
+                line["place_of_service"] = default_pos
+
+        return {
+            "billing_provider_npi": f.get("billing_provider_npi", ""),
+            "billing_provider_taxonomy": f.get("billing_provider_taxonomy", ""),
+            "subscriber_id": f.get("subscriber_id", ""),
+            "subscriber_first_name": f.get("subscriber_first_name", ""),
+            "subscriber_last_name": f.get("subscriber_last_name", ""),
+            "subscriber_dob": f.get("subscriber_dob", ""),
+            "subscriber_gender": f.get("subscriber_gender", ""),
+            "patient_first_name": f.get("patient_first_name", ""),
+            "patient_last_name": f.get("patient_last_name", ""),
+            "patient_dob": f.get("patient_dob", ""),
+            "patient_gender": f.get("patient_gender", ""),
+            "patient_relationship": f.get("patient_relationship", ""),
+            "payer_id": f.get("payer_id", ""),
+            "payer_name": f.get("payer_name", ""),
+            "claim_type": f.get("claim_type", ""),
+            "place_of_service": default_pos,
+            "total_charge": float(f.get("total_charge", 0)),
+            "diagnosis_codes": diagnosis_codes,
+            "lines": lines,
+        }
 
 
 class SessionStore:
