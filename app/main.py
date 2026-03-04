@@ -2,7 +2,7 @@ import os
 import json
 import uuid
 import logging
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, Form, HTTPException
 
 logger = logging.getLogger(__name__)
 from fastapi.staticfiles import StaticFiles
@@ -36,7 +36,7 @@ async def get_session(session_id: str):
 
 
 @app.post("/api/upload")
-async def upload_document(file: UploadFile = File(...), session_id: str = ""):
+async def upload_document(file: UploadFile = File(...), session_id: str = Form("")):
     session = session_store.get(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -56,17 +56,23 @@ async def upload_document(file: UploadFile = File(...), session_id: str = ""):
     try:
         processor = DocumentProcessor(api_key=settings.pageindex_api_key)
         doc_id = processor.index_document(file_path)
+        logger.info(f"Document submitted to PageIndex: {doc_id}")
 
-        # Get both tree text and OCR for maximum extraction context
-        tree_text = processor.get_document_text(doc_id)
-        ocr_text = processor.get_document_ocr(doc_id)
+        # Wait for PageIndex to finish processing (takes ~10s)
+        ready = processor.wait_until_ready(doc_id, max_wait=60, poll_interval=3)
+        if not ready:
+            logger.warning(f"Document {doc_id} not ready, proceeding with empty extraction")
+        else:
+            # Get both tree text and OCR for maximum extraction context
+            tree_text = processor.get_document_text(doc_id)
+            ocr_text = processor.get_document_ocr(doc_id)
 
-        # Combine both sources for the LLM
-        combined_text = f"=== DOCUMENT STRUCTURE ===\n{tree_text}\n\n=== RAW OCR TEXT ===\n{ocr_text}"
+            # Combine both sources for the LLM
+            combined_text = f"=== DOCUMENT STRUCTURE ===\n{tree_text}\n\n=== RAW OCR TEXT ===\n{ocr_text}"
 
-        extractor = FieldExtractor()
-        extracted_fields = await extractor.extract_fields(combined_text)
-        logger.info(f"Extracted {len(extracted_fields)} fields from document")
+            extractor = FieldExtractor()
+            extracted_fields = await extractor.extract_fields(combined_text)
+            logger.info(f"Extracted {len(extracted_fields)} fields from document")
     except Exception as e:
         logger.error(f"Document processing failed: {e}", exc_info=True)
 
