@@ -47,3 +47,18 @@ async def test_extract_fields_handles_invalid_json():
         extractor = FieldExtractor(api_key="test-key")
         fields = await extractor.extract_fields("some text")
         assert fields == {}
+
+
+@pytest.mark.asyncio
+async def test_extract_fields_handles_markdown_json():
+    mock_response = MagicMock()
+    mock_response.choices = [
+        MagicMock(message=MagicMock(content='```json\n{"subscriber_id": "ABC123"}\n```'))
+    ]
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+    with patch("app.documents.extractor.AsyncOpenAI", return_value=mock_client):
+        extractor = FieldExtractor(api_key="test-key")
+        fields = await extractor.extract_fields("some text")
+        assert fields["subscriber_id"] == "ABC123"

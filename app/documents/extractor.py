@@ -1,9 +1,12 @@
 import json
+import logging
 
 from openai import AsyncOpenAI
 
 from app.chat.prompts import get_extraction_prompt
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class FieldExtractor:
@@ -18,7 +21,28 @@ class FieldExtractor:
             temperature=0,
         )
         content = response.choices[0].message.content.strip()
+        return self._parse_json(content)
+
+    def _parse_json(self, content: str) -> dict:
         try:
             return json.loads(content)
         except (json.JSONDecodeError, TypeError):
-            return {}
+            pass
+
+        if "```json" in content:
+            try:
+                start = content.index("```json") + 7
+                end = content.index("```", start)
+                return json.loads(content[start:end].strip())
+            except (json.JSONDecodeError, ValueError):
+                pass
+        elif "```" in content:
+            try:
+                start = content.index("```") + 3
+                end = content.index("```", start)
+                return json.loads(content[start:end].strip())
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        logger.warning(f"Failed to parse extraction response: {content[:200]}")
+        return {}
