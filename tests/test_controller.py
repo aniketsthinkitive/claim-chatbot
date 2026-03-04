@@ -25,7 +25,7 @@ def mock_openai_with_extraction():
     mock.choices = [
         MagicMock(
             message=MagicMock(
-                content='{"message": "Got it! Policy POL-123.", "extracted_fields": {"policy_number": "POL-123"}}'
+                content='{"message": "Got it! Your subscriber ID is XYZ123.", "extracted_fields": {"subscriber_id": "XYZ123"}}'
             )
         )
     ]
@@ -48,20 +48,42 @@ async def test_handle_message_extracts_field(session, mock_openai_with_extractio
     mock_client.chat.completions.create = AsyncMock(return_value=mock_openai_with_extraction)
     with patch("app.chat.controller.AsyncOpenAI", return_value=mock_client):
         controller = ChatController(openai_api_key="test-key")
-        response = await controller.handle_message(session, "My policy is POL-123")
-    assert session.collected_fields.get("policy_number") == "POL-123"
-    assert "policy_number" not in session.missing_fields
+        response = await controller.handle_message(session, "My subscriber ID is XYZ123")
+    assert session.collected_fields.get("subscriber_id") == "XYZ123"
+    assert "subscriber_id" not in session.missing_fields
 
 @pytest.mark.asyncio
 async def test_handle_message_triggers_validation():
     session = ClaimSession(session_id="test")
-    for field in ["policy_number", "claim_type", "incident_date", "claim_amount"]:
-        session.update_field(field, "test-value")
+    # Fill all fields except subscriber_id
+    all_except_one = {
+        "subscriber_first_name": "John",
+        "subscriber_last_name": "Doe",
+        "subscriber_dob": "1985-03-15",
+        "subscriber_gender": "M",
+        "patient_relationship": "self",
+        "patient_first_name": "John",
+        "patient_last_name": "Doe",
+        "patient_dob": "1985-03-15",
+        "patient_gender": "M",
+        "payer_name": "Aetna",
+        "payer_id": "00001",
+        "billing_provider_npi": "1245319599",
+        "billing_provider_taxonomy": "207Q00000X",
+        "claim_type": "professional",
+        "place_of_service": "11",
+        "total_charge": "150.00",
+        "diagnosis_codes": [{"code": "J06.9", "pointer": 1, "type": "principal"}],
+        "service_lines": [{"procedure_code": "99213", "charge_amount": 150.00, "units": 1.0, "service_date_from": "2026-03-01", "diagnosis_pointers": [1], "place_of_service": "11"}],
+    }
+    for field, value in all_except_one.items():
+        session.update_field(field, value)
+
     mock_response = MagicMock()
     mock_response.choices = [
         MagicMock(
             message=MagicMock(
-                content='{"message": "Got it!", "extracted_fields": {"incident_description": "car crash"}}'
+                content='{"message": "Got your ID!", "extracted_fields": {"subscriber_id": "XYZ123"}}'
             )
         )
     ]
@@ -69,8 +91,8 @@ async def test_handle_message_triggers_validation():
     mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
     with patch("app.chat.controller.AsyncOpenAI", return_value=mock_client):
         controller = ChatController(openai_api_key="test-key")
-        response = await controller.handle_message(session, "A car crash on the highway")
-    assert session.status == "complete"
+        response = await controller.handle_message(session, "My ID is XYZ123")
+    assert session.status == "confirming"
     assert session.validation_result is not None
     assert response["type"] == "validation_result"
 

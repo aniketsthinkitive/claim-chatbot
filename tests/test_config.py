@@ -12,7 +12,7 @@ def test_settings_has_required_fields():
     assert settings.openai_model == "gpt-4o"
     assert settings.upload_dir == "uploads"
     assert isinstance(settings.required_claim_fields, list)
-    assert "policy_number" in settings.required_claim_fields
+    assert "subscriber_id" in settings.required_claim_fields
 
 
 def test_settings_required_claim_fields():
@@ -21,10 +21,24 @@ def test_settings_required_claim_fields():
         pageindex_api_key="k",
     )
     expected = [
-        "policy_number",
+        "subscriber_first_name",
+        "subscriber_last_name",
+        "subscriber_dob",
+        "subscriber_gender",
+        "subscriber_id",
+        "patient_relationship",
+        "patient_first_name",
+        "patient_last_name",
+        "patient_dob",
+        "patient_gender",
+        "payer_name",
+        "payer_id",
+        "billing_provider_npi",
+        "billing_provider_taxonomy",
         "claim_type",
-        "incident_date",
-        "claim_amount",
-        "incident_description",
+        "place_of_service",
+        "total_charge",
+        "diagnosis_codes",
+        "service_lines",
     ]
     assert settings.required_claim_fields == expected

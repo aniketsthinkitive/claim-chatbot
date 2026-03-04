@@ -6,12 +6,27 @@ def test_claim_session_defaults():
     assert session.session_id == "abc"
     assert session.status == "collecting"
     assert session.collected_fields == {}
+    assert len(session.missing_fields) == 19
     assert session.missing_fields == [
-        "policy_number",
+        "subscriber_first_name",
+        "subscriber_last_name",
+        "subscriber_dob",
+        "subscriber_gender",
+        "subscriber_id",
+        "patient_relationship",
+        "patient_first_name",
+        "patient_last_name",
+        "patient_dob",
+        "patient_gender",
+        "payer_name",
+        "payer_id",
+        "billing_provider_npi",
+        "billing_provider_taxonomy",
         "claim_type",
-        "incident_date",
-        "claim_amount",
-        "incident_description",
+        "place_of_service",
+        "total_charge",
+        "diagnosis_codes",
+        "service_lines",
     ]
     assert session.uploaded_documents == []
     assert session.pageindex_extractions == {}
@@ -21,9 +36,9 @@ def test_claim_session_defaults():
 
 def test_session_update_field():
     session = ClaimSession(session_id="abc")
-    session.update_field("policy_number", "POL-123")
-    assert session.collected_fields["policy_number"] == "POL-123"
-    assert "policy_number" not in session.missing_fields
+    session.update_field("subscriber_id", "XYZ123")
+    assert session.collected_fields["subscriber_id"] == "XYZ123"
+    assert "subscriber_id" not in session.missing_fields
 
 
 def test_session_all_fields_collected():
