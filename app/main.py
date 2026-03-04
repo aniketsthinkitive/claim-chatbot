@@ -1,7 +1,10 @@
 import os
 import json
 import uuid
+import logging
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, UploadFile, File, HTTPException
+
+logger = logging.getLogger(__name__)
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.config import settings
@@ -53,11 +56,19 @@ async def upload_document(file: UploadFile = File(...), session_id: str = ""):
     try:
         processor = DocumentProcessor(api_key=settings.pageindex_api_key)
         doc_id = processor.index_document(file_path)
-        doc_text = processor.get_document_text(doc_id)
+
+        # Get both tree text and OCR for maximum extraction context
+        tree_text = processor.get_document_text(doc_id)
+        ocr_text = processor.get_document_ocr(doc_id)
+
+        # Combine both sources for the LLM
+        combined_text = f"=== DOCUMENT STRUCTURE ===\n{tree_text}\n\n=== RAW OCR TEXT ===\n{ocr_text}"
+
         extractor = FieldExtractor()
-        extracted_fields = await extractor.extract_fields(doc_text)
-    except Exception:
-        pass
+        extracted_fields = await extractor.extract_fields(combined_text)
+        logger.info(f"Extracted {len(extracted_fields)} fields from document")
+    except Exception as e:
+        logger.error(f"Document processing failed: {e}", exc_info=True)
 
     response = await chat_controller.handle_document_upload(session, extracted_fields)
     return {"file_id": file_id, "response": response}
@@ -80,16 +91,23 @@ async def websocket_chat(websocket: WebSocket):
             data = await websocket.receive_json()
             msg_type = data.get("type", "message")
 
-            if msg_type == "message":
-                response = await chat_controller.handle_message(
-                    session, data.get("content", "")
-                )
-                await websocket.send_json(response)
-            elif msg_type == "upload_complete":
-                file_id = data.get("file_id", "")
+            try:
+                if msg_type == "message":
+                    response = await chat_controller.handle_message(
+                        session, data.get("content", "")
+                    )
+                    await websocket.send_json(response)
+                elif msg_type == "upload_complete":
+                    file_id = data.get("file_id", "")
+                    await websocket.send_json({
+                        "type": "bot_message",
+                        "content": "Document received! Analyzing...",
+                    })
+            except Exception as e:
+                logger.error(f"Error processing message: {e}", exc_info=True)
                 await websocket.send_json({
                     "type": "bot_message",
-                    "content": "Document received! Analyzing...",
+                    "content": f"Sorry, an error occurred: {e}",
                 })
     except WebSocketDisconnect:
         pass
