@@ -79,3 +79,63 @@ def test_get_welcome_message():
     msg = controller.get_welcome_message()
     assert "claim" in msg["content"].lower()
     assert msg["type"] == "bot_message"
+
+
+@pytest.mark.asyncio
+async def test_handle_document_upload_shows_grouped_summary():
+    session = ClaimSession(session_id="test-upload")
+    extracted = {
+        "subscriber_first_name": "John",
+        "subscriber_last_name": "Doe",
+        "subscriber_dob": "1985-03-15",
+        "subscriber_gender": "M",
+        "subscriber_id": "XYZ123",
+        "payer_name": "Aetna",
+        "billing_provider_npi": "1245319599",
+    }
+    controller = ChatController(openai_api_key="test-key")
+    response = await controller.handle_document_upload(session, extracted)
+
+    assert response["type"] == "bot_message"
+    content = response["content"]
+    # Should contain grouped headers
+    assert "Subscriber" in content
+    assert "John" in content
+    assert "Doe" in content
+    # Should mention what's still missing
+    assert "still need" in content.lower() or "missing" in content.lower()
+    # Extracted fields should be in session
+    assert session.collected_fields["subscriber_first_name"] == "John"
+    assert "subscriber_first_name" not in session.missing_fields
+
+
+@pytest.mark.asyncio
+async def test_handle_document_upload_all_fields_extracted():
+    session = ClaimSession(session_id="test-full")
+    all_fields = {
+        "subscriber_first_name": "John",
+        "subscriber_last_name": "Doe",
+        "subscriber_dob": "1985-03-15",
+        "subscriber_gender": "M",
+        "subscriber_id": "XYZ123",
+        "patient_relationship": "self",
+        "patient_first_name": "John",
+        "patient_last_name": "Doe",
+        "patient_dob": "1985-03-15",
+        "patient_gender": "M",
+        "payer_name": "Aetna",
+        "payer_id": "00001",
+        "billing_provider_npi": "1245319599",
+        "billing_provider_taxonomy": "207Q00000X",
+        "claim_type": "professional",
+        "place_of_service": "11",
+        "total_charge": 150.00,
+        "diagnosis_codes": [{"code": "J06.9", "pointer": 1, "type": "principal"}],
+        "service_lines": [{"procedure_code": "99213", "charge_amount": 150.00, "units": 1.0, "service_date_from": "2026-03-01", "diagnosis_pointers": [1], "place_of_service": "11"}],
+    }
+    controller = ChatController(openai_api_key="test-key")
+    response = await controller.handle_document_upload(session, all_fields)
+
+    # Should trigger validation since all fields present
+    assert response["type"] == "validation_result"
+    assert session.status == "confirming"
