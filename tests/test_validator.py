@@ -100,6 +100,52 @@ def test_check_eligibility_live():
         assert "plans" in result
 
 
+def test_validate_claim_runs_ai_phase():
+    """validate_claim with ai_config should produce an 'ai' phase result."""
+    ai_config = {
+        "provider": os.getenv("CLAIM_VALIDATOR_AI_PROVIDER", "openai"),
+        "api_key": os.getenv("CLAIM_VALIDATOR_AI_API_KEY", os.getenv("OPENAI_API_KEY", "")),
+        "model": os.getenv("CLAIM_VALIDATOR_AI_MODEL", "gpt-4o"),
+    }
+    if not ai_config["api_key"]:
+        import pytest
+        pytest.skip("AI API key not configured")
+
+    result = validate_claim(
+        {
+            "billing_provider_npi": "1245319599",
+            "subscriber_id": "XYZ123",
+            "subscriber_first_name": "John",
+            "subscriber_last_name": "Doe",
+            "subscriber_dob": "1985-03-15",
+            "patient_first_name": "John",
+            "patient_last_name": "Doe",
+            "patient_dob": "1985-03-15",
+            "patient_gender": "M",
+            "patient_relationship": "self",
+            "payer_id": "00001",
+            "claim_type": "professional",
+            "place_of_service": "11",
+            "total_charge": 150.00,
+            "diagnosis_codes": [{"code": "J06.9", "pointer": 1, "type": "principal"}],
+            "lines": [
+                {
+                    "procedure_code": "99213",
+                    "charge_amount": 150.00,
+                    "units": 1.0,
+                    "service_date_from": "2026-03-01",
+                    "diagnosis_pointers": [1],
+                    "place_of_service": "11",
+                }
+            ],
+        },
+        ai_config=ai_config,
+    )
+    phase_names = [pr["phase"] for pr in result["phase_results"]]
+    assert "rule_based" in phase_names
+    assert "ai" in phase_names, f"AI phase missing. Got phases: {phase_names}"
+
+
 def test_check_eligibility_unavailable():
     """check_eligibility returns unavailable when library missing."""
     with patch("app.validation.validator._clearinghouse_available", False):

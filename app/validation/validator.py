@@ -7,6 +7,11 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_AI_VALIDATORS = [
+    "claim_validator.validators.ai.code_validation.CodeValidationAI",
+    "claim_validator.validators.ai.coverage_check.CoverageCheckAI",
+]
+
 # Check if claim-validator library is available
 _library_available = False
 _clearinghouse_available = False
@@ -35,12 +40,17 @@ def validate_claim(
         return _fallback_validate(payload)
 
     try:
-        kwargs: dict[str, Any] = {}
-        if clearinghouse_config:
-            kwargs["clearinghouse_config"] = clearinghouse_config
+        from claim_validator.conf import ClaimValidatorSettings
+
+        settings_kwargs: dict[str, Any] = {}
         if ai_config:
-            kwargs["ai_config"] = ai_config
-        result = _cv_validate(payload, **kwargs)
+            settings_kwargs["ai_config"] = ai_config
+            settings_kwargs["ai_validators"] = DEFAULT_AI_VALIDATORS
+        if clearinghouse_config:
+            settings_kwargs["clearinghouse_config"] = clearinghouse_config
+
+        cv_settings = ClaimValidatorSettings(**settings_kwargs) if settings_kwargs else None
+        result = _cv_validate(payload, settings=cv_settings)
 
         findings = []
         for f in result.findings:
