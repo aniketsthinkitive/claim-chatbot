@@ -321,6 +321,14 @@ body {
     background: #e8eaf6;
     color: #3949ab;
 }
+.phase-badge.phase-pass {
+    background: #dcfce7;
+    color: #16a34a;
+}
+.phase-badge.phase-findings {
+    background: #fef3c7;
+    color: #d97706;
+}
 
 /* Eligibility result */
 .message.eligibility {
@@ -394,4 +402,86 @@ body {
     font-size: 11px;
     color: #94a3b8;
     margin-top: 6px;
+}
+
+/* Validation stepper */
+.validation-stepper {
+    max-width: 90%;
+    padding: 14px 18px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+}
+
+.stepper-title {
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 12px;
+    color: #1e293b;
+}
+
+.stepper-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.stepper-step {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #94a3b8;
+    transition: all 0.3s;
+}
+
+.stepper-step.active {
+    background: #eff6ff;
+    color: #2563eb;
+}
+
+.stepper-step.done {
+    color: #16a34a;
+}
+
+.stepper-step.error {
+    color: #dc2626;
+}
+
+.stepper-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    background: #e2e8f0;
+    color: #94a3b8;
+    flex-shrink: 0;
+    transition: all 0.3s;
+}
+
+.stepper-step.active .stepper-icon {
+    background: #2563eb;
+    color: #fff;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.stepper-step.done .stepper-icon {
+    background: #16a34a;
+    color: #fff;
+}
+
+.stepper-label {
+    font-weight: 500;
+    flex: 1;
+}
+
+.stepper-status {
+    font-size: 11px;
+    font-weight: 400;
 }

@@ -30,11 +30,20 @@ function connect() {
             return;
         }
 
+        if (data.type === "validation_progress") {
+            showValidationProgress(data);
+            return;
+        }
+
         removeTypingIndicator();
 
         if (data.type === "bot_message") {
             addMessage(data.content, "bot");
         } else if (data.type === "validation_result") {
+            // Remove progress stepper
+            var stepper = document.getElementById("validation-progress");
+            if (stepper) stepper.remove();
+
             if (data.content) {
                 addMessage(data.content, "bot");
             }
@@ -116,7 +125,8 @@ function addValidationResult(result) {
                 pr.phase === "clearinghouse" ? "Clearinghouse" :
                 pr.phase === "ai" ? "AI Analysis" :
                 pr.phase === "fallback" ? "Basic Checks" : pr.phase;
-            html += '<span class="phase-badge">' + escapeHtml(phaseLabel) +
+            var badgeClass = pr.findings_count === 0 ? "phase-pass" : "phase-findings";
+        html += '<span class="phase-badge ' + badgeClass + '">' + escapeHtml(phaseLabel) +
                 ' (' + pr.findings_count + ')</span>';
         });
         html += '</div>';
@@ -270,6 +280,54 @@ function hideProgress(doneMessage) {
             container.remove();
         }, 1500);
     }
+}
+
+function showValidationProgress(data) {
+    let container = document.getElementById("validation-progress");
+    if (!container) {
+        container = document.createElement("div");
+        container.id = "validation-progress";
+        container.classList.add("message", "bot", "validation-stepper");
+        container.innerHTML =
+            '<div class="stepper-title">Validating Claim</div>' +
+            '<div class="stepper-steps">' +
+            '  <div class="stepper-step" data-phase="rule_based">' +
+            '    <span class="stepper-icon">1</span>' +
+            '    <span class="stepper-label">Rule-Based</span>' +
+            '    <span class="stepper-status"></span>' +
+            '  </div>' +
+            '  <div class="stepper-step" data-phase="ai">' +
+            '    <span class="stepper-icon">2</span>' +
+            '    <span class="stepper-label">AI Analysis</span>' +
+            '    <span class="stepper-status"></span>' +
+            '  </div>' +
+            '  <div class="stepper-step" data-phase="eligibility">' +
+            '    <span class="stepper-icon">3</span>' +
+            '    <span class="stepper-label">Eligibility</span>' +
+            '    <span class="stepper-status"></span>' +
+            '  </div>' +
+            '</div>';
+        messagesDiv.appendChild(container);
+    }
+
+    var step = container.querySelector('[data-phase="' + data.phase + '"]');
+    if (!step) return;
+
+    if (data.status === "running") {
+        step.classList.add("active");
+        step.classList.remove("done", "error");
+        step.querySelector(".stepper-status").textContent = "Running...";
+    } else if (data.status === "pass" || data.status === "eligible") {
+        step.classList.remove("active");
+        step.classList.add("done");
+        step.querySelector(".stepper-status").textContent = data.status;
+    } else {
+        step.classList.remove("active");
+        step.classList.add("done");
+        step.querySelector(".stepper-status").textContent = data.status;
+    }
+
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
 function showTypingIndicator() {
