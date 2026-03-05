@@ -68,19 +68,61 @@ function addValidationResult(result) {
         needs_review: "Claim Needs Review",
     };
 
-    let html = '<div class="validation-header ' + result.status + '">' + (statusLabel[result.status] || result.status) + '</div>';
+    const statusIcon = { pass: "\u2705", fail: "\u274C", needs_review: "\u26A0\uFE0F" };
 
-    if (result.issues && result.issues.length > 0) {
-        html += '<div><strong>Issues:</strong><ul class="validation-issues">';
-        result.issues.forEach((issue) => {
-            html += "<li>" + escapeHtml(issue) + "</li>";
-        });
-        html += "</ul></div>";
+    let html = '<div class="validation-header ' + result.status + '">' +
+        (statusIcon[result.status] || "") + " " +
+        (statusLabel[result.status] || result.status) + '</div>';
+
+    // Summary stats
+    if (result.total_findings !== undefined) {
+        html += '<div class="validation-stats">' +
+            '<span>' + result.total_findings + ' finding(s)</span>' +
+            (result.total_errors ? ' &middot; <span class="stat-errors">' + result.total_errors + ' error(s)</span>' : '') +
+            (result.total_warnings ? ' &middot; <span class="stat-warnings">' + result.total_warnings + ' warning(s)</span>' : '') +
+            (result.execution_time ? ' &middot; <span>' + result.execution_time.toFixed(3) + 's</span>' : '') +
+            '</div>';
     }
 
+    // Detailed findings with suggestions
+    if (result.findings && result.findings.length > 0) {
+        html += '<div class="validation-findings">';
+        result.findings.forEach(function (f) {
+            var sevClass = f.severity === "error" ? "finding-error" : "finding-warning";
+            var sevLabel = f.severity === "error" ? "ERROR" : "WARNING";
+            html += '<div class="finding-item ' + sevClass + '">' +
+                '<div class="finding-header"><span class="finding-severity">' + sevLabel + '</span> ' +
+                '<span class="finding-code">' + escapeHtml(f.code) + '</span></div>' +
+                '<div class="finding-message">' + escapeHtml(f.message) + '</div>';
+            if (f.field_name) {
+                html += '<div class="finding-field">Field: ' + escapeHtml(f.field_name) + '</div>';
+            }
+            if (f.suggestion) {
+                html += '<div class="finding-suggestion">\uD83D\uDCA1 ' + escapeHtml(f.suggestion) + '</div>';
+            }
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+
+    // Phase results (shows which pipeline phases ran)
+    if (result.phase_results && result.phase_results.length > 0) {
+        html += '<div class="validation-phases">';
+        result.phase_results.forEach(function (pr) {
+            var phaseLabel = pr.phase === "rule_based" ? "Rule-Based" :
+                pr.phase === "clearinghouse" ? "Clearinghouse" :
+                pr.phase === "ai" ? "AI Analysis" :
+                pr.phase === "fallback" ? "Basic Checks" : pr.phase;
+            html += '<span class="phase-badge">' + escapeHtml(phaseLabel) +
+                ' (' + pr.findings_count + ')</span>';
+        });
+        html += '</div>';
+    }
+
+    // Recommendations (shown for passing claims)
     if (result.recommendations && result.recommendations.length > 0) {
         html += '<div><strong>Recommendations:</strong><ul class="validation-recommendations">';
-        result.recommendations.forEach((rec) => {
+        result.recommendations.forEach(function (rec) {
             html += "<li>" + escapeHtml(rec) + "</li>";
         });
         html += "</ul></div>";
