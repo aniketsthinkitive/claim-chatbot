@@ -139,7 +139,7 @@ async def process_document_with_progress(websocket: WebSocket, session, file_pat
         })
 
         # Process extracted fields through controller
-        response = await chat_controller.handle_document_upload(session, extracted_fields)
+        response = await chat_controller.handle_document_upload(session, extracted_fields, websocket=websocket)
         await websocket.send_json(response)
 
     except Exception as e:
@@ -174,7 +174,7 @@ async def websocket_chat(websocket: WebSocket):
             try:
                 if msg_type == "message":
                     response = await chat_controller.handle_message(
-                        session, data.get("content", "")
+                        session, data.get("content", ""), websocket=websocket
                     )
                     await websocket.send_json(response)
                 elif msg_type == "process_document":

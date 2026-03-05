@@ -95,6 +95,80 @@ def validate_claim(
         return _fallback_validate(payload)
 
 
+async def validate_claim_phased(
+    payload: dict,
+    *,
+    ai_config: dict | None = None,
+    progress_callback=None,
+) -> dict:
+    """Validate claim with per-phase progress callbacks."""
+    if not _library_available:
+        return _fallback_validate(payload)
+
+    try:
+        from claim_validator.conf import ClaimValidatorSettings
+
+        settings_kwargs: dict[str, Any] = {}
+        if ai_config:
+            settings_kwargs["ai_config"] = ai_config
+            settings_kwargs["ai_validators"] = DEFAULT_AI_VALIDATORS
+
+        cv_settings = ClaimValidatorSettings(**settings_kwargs) if settings_kwargs else None
+
+        # Send "running" before pipeline starts
+        if progress_callback:
+            await progress_callback("rule_based", "running")
+
+        result = _cv_validate(payload, settings=cv_settings)
+
+        # Report each completed phase
+        phase_results = []
+        for pr in result.phase_results:
+            phase_results.append({
+                "phase": pr.phase,
+                "findings_count": len(pr.findings),
+                "execution_time": pr.execution_time,
+            })
+            if progress_callback:
+                status = "pass" if len(pr.findings) == 0 else f"{len(pr.findings)} finding(s)"
+                await progress_callback(pr.phase, status)
+
+        findings = []
+        for f in result.findings:
+            sev = f.severity.value if hasattr(f.severity, "value") else str(f.severity)
+            findings.append({
+                "code": f.code,
+                "message": f.message,
+                "severity": sev,
+                "field_name": getattr(f, "field_name", None) or "",
+                "suggestion": getattr(f, "suggestion", None) or "",
+            })
+
+        errors = [f for f in findings if f["severity"] == "error"]
+        warnings = [f for f in findings if f["severity"] == "warning"]
+
+        if result.passed:
+            status = "pass"
+        elif len(errors) <= 3:
+            status = "needs_review"
+        else:
+            status = "fail"
+
+        return {
+            "status": status,
+            "passed": result.passed,
+            "findings": findings,
+            "total_findings": len(findings),
+            "total_errors": len(errors),
+            "total_warnings": len(warnings),
+            "execution_time": result.execution_time,
+            "phase_results": phase_results,
+        }
+    except Exception as e:
+        logger.error("Validator error, using fallback: %s", e, exc_info=True)
+        return _fallback_validate(payload)
+
+
 def _fallback_validate(payload: dict) -> dict:
     """Basic field checks when claim-validator library is unavailable."""
     issues = []

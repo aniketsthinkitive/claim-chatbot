@@ -191,7 +191,7 @@ async def test_build_summary_returns_validation_result():
         session.update_field(field, value)
 
     controller = ChatController(openai_api_key="test-key")
-    result = controller._build_summary(session, "Here is your summary.")
+    result = await controller._build_summary(session, "Here is your summary.")
 
     assert result["type"] == "validation_result"
     assert result["content"] == "Here is your summary."
@@ -202,3 +202,43 @@ async def test_build_summary_returns_validation_result():
     assert isinstance(result["claim_payload"], dict)
     assert session.status == "confirming"
     assert session.validation_result is not None
+
+
+@pytest.mark.asyncio
+async def test_build_summary_sends_progress(monkeypatch):
+    """_build_summary sends validation_progress messages via websocket."""
+    monkeypatch.delenv("CLEARINGHOUSE_PROVIDER", raising=False)
+
+    session = ClaimSession(session_id="test-progress")
+    all_fields = {
+        "subscriber_first_name": "John", "subscriber_last_name": "Doe",
+        "subscriber_dob": "1985-03-15", "subscriber_gender": "M",
+        "subscriber_id": "XYZ123",
+        "patient_relationship": "self",
+        "patient_first_name": "John", "patient_last_name": "Doe",
+        "patient_dob": "1985-03-15", "patient_gender": "M",
+        "payer_name": "Aetna", "payer_id": "00001",
+        "billing_provider_name": "City Medical Group",
+        "billing_provider_npi": "1245319599",
+        "billing_provider_taxonomy": "207Q00000X",
+        "claim_type": "professional", "place_of_service": "11",
+        "total_charge": "150.00",
+        "diagnosis_codes": [{"code": "J06.9", "pointer": 1, "type": "principal"}],
+        "service_lines": [{"procedure_code": "99213", "charge_amount": 150.00,
+                           "units": 1.0, "service_date_from": "2026-03-01",
+                           "diagnosis_pointers": [1], "place_of_service": "11"}],
+    }
+    for field, value in all_fields.items():
+        session.update_field(field, value)
+
+    sent_messages = []
+    mock_ws = AsyncMock()
+    mock_ws.send_json = AsyncMock(side_effect=lambda msg: sent_messages.append(msg))
+
+    controller = ChatController(openai_api_key="test-key")
+    result = await controller._build_summary(session, "All done!", mock_ws)
+
+    assert result["type"] == "validation_result"
+    progress_msgs = [m for m in sent_messages if m.get("type") == "validation_progress"]
+    assert len(progress_msgs) >= 1
+    assert any(m["phase"] == "rule_based" for m in progress_msgs)

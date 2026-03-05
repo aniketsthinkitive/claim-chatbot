@@ -6,7 +6,7 @@ from openai import AsyncOpenAI
 from app.chat.prompts import get_system_prompt
 from app.chat.session import ClaimSession
 from app.config import settings
-from app.validation.validator import check_eligibility, validate_claim
+from app.validation.validator import check_eligibility, validate_claim, validate_claim_phased
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ class ChatController:
             ),
         }
 
-    async def handle_message(self, session: ClaimSession, user_message: str) -> dict:
+    async def handle_message(self, session: ClaimSession, user_message: str, websocket=None) -> dict:
         session.add_message("user", user_message)
 
         messages = [
@@ -74,7 +74,7 @@ class ChatController:
         session.add_message("bot", bot_message)
 
         if session.all_fields_collected():
-            return self._build_summary(session, bot_message)
+            return await self._build_summary(session, bot_message, websocket)
 
         logger.debug(
             "Fields still missing after extraction: %s (extracted: %s)",
@@ -84,7 +84,7 @@ class ChatController:
         return {"type": "bot_message", "content": bot_message}
 
     async def handle_document_upload(
-        self, session: ClaimSession, extracted_fields: dict
+        self, session: ClaimSession, extracted_fields: dict, websocket=None
     ) -> dict:
         # Handle patient_relationship=self: auto-copy subscriber to patient
         if extracted_fields.get("patient_relationship", "").lower() == "self":
@@ -117,7 +117,7 @@ class ChatController:
         session.add_message("bot", msg)
 
         if session.all_fields_collected():
-            return self._build_summary(session, msg)
+            return await self._build_summary(session, msg, websocket)
 
         return {"type": "bot_message", "content": msg}
 
@@ -196,20 +196,34 @@ class ChatController:
 
         return "\n".join(lines)
 
-    def _build_summary(self, session: ClaimSession, preceding_message: str) -> dict:
+    async def _build_summary(self, session: ClaimSession, preceding_message: str, websocket=None) -> dict:
         """Build and return the validation result for the frontend."""
         session.status = "confirming"
         payload = session.build_claim_payload()
 
-        # Check eligibility first (if clearinghouse configured)
-        eligibility = None
-        if settings.clearinghouse_config:
-            eligibility = check_eligibility(payload, settings.clearinghouse_config)
+        async def send_progress(phase, status):
+            if websocket:
+                await websocket.send_json({
+                    "type": "validation_progress",
+                    "phase": phase,
+                    "status": status,
+                })
 
-        result = validate_claim(
+        # Validation (rule-based + AI)
+        result = await validate_claim_phased(
             payload,
             ai_config=settings.ai_config,
+            progress_callback=send_progress,
         )
+
+        # Eligibility check
+        eligibility = None
+        if settings.clearinghouse_config:
+            await send_progress("eligibility", "running")
+            eligibility = check_eligibility(payload, settings.clearinghouse_config)
+            elig_status = "eligible" if eligibility.get("eligible") else "error"
+            await send_progress("eligibility", elig_status)
+
         session.validation_result = result
 
         response = {
