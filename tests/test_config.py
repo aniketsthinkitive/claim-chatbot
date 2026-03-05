@@ -33,6 +33,7 @@ def test_settings_required_claim_fields():
         "patient_gender",
         "payer_name",
         "payer_id",
+        "billing_provider_name",
         "billing_provider_npi",
         "billing_provider_taxonomy",
         "claim_type",

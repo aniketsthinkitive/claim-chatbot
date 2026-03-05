@@ -134,7 +134,7 @@ class ChatController:
             ],
             "Payer/Insurance": ["payer_name", "payer_id"],
             "Billing Provider": [
-                "billing_provider_npi", "billing_provider_taxonomy",
+                "billing_provider_name", "billing_provider_npi", "billing_provider_taxonomy",
             ],
             "Claim Details": [
                 "claim_type", "place_of_service", "total_charge",
@@ -156,6 +156,7 @@ class ChatController:
             "patient_gender": "Gender",
             "payer_name": "Insurance Company",
             "payer_id": "Payer ID",
+            "billing_provider_name": "Provider Name",
             "billing_provider_npi": "NPI",
             "billing_provider_taxonomy": "Taxonomy",
             "claim_type": "Claim Type",

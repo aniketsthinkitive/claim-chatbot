@@ -80,6 +80,7 @@ class Settings(BaseModel):
         "payer_name",
         "payer_id",
         # Billing provider
+        "billing_provider_name",
         "billing_provider_npi",
         "billing_provider_taxonomy",
         # Claim details

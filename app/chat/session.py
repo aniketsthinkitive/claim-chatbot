@@ -28,6 +28,15 @@ class ClaimSession(BaseModel):
     def add_message(self, role: str, content: str) -> None:
         self.chat_history.append({"role": role, "content": content})
 
+    @staticmethod
+    def _safe_float(val, default: float = 0.0) -> float:
+        try:
+            if isinstance(val, str):
+                val = val.strip().lstrip("$").replace(",", "")
+            return float(val)
+        except (ValueError, TypeError):
+            return default
+
     def build_claim_payload(self) -> dict:
         """Build the final ClaimMD API payload from collected fields."""
         f = self.collected_fields
@@ -42,6 +51,7 @@ class ClaimSession(BaseModel):
                 line["place_of_service"] = default_pos
 
         return {
+            "billing_provider_name": f.get("billing_provider_name", ""),
             "billing_provider_npi": f.get("billing_provider_npi", ""),
             "billing_provider_taxonomy": f.get("billing_provider_taxonomy", ""),
             "subscriber_id": f.get("subscriber_id", ""),
@@ -58,7 +68,7 @@ class ClaimSession(BaseModel):
             "payer_name": f.get("payer_name", ""),
             "claim_type": f.get("claim_type", ""),
             "place_of_service": default_pos,
-            "total_charge": float(f.get("total_charge", 0)),
+            "total_charge": self._safe_float(f.get("total_charge", 0)),
             "diagnosis_codes": diagnosis_codes,
             "lines": lines,
         }

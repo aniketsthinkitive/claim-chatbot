@@ -56,6 +56,7 @@ VALID_CLAIM = {
     "patient_gender": "M",
     "payer_name": "UNITED HEALTHCARE",
     "payer_id": "87726",
+    "billing_provider_name": "City Medical Group",
     "billing_provider_npi": "1234567893",
     "billing_provider_taxonomy": "207Q00000X",
     "claim_type": "professional",
@@ -254,6 +255,7 @@ class TestSessionToValidation:
             "patient_gender": "F",
             "payer_name": "AETNA",
             "payer_id": "60054",
+            "billing_provider_name": "City Medical Group",
             "billing_provider_npi": "1234567893",
             "billing_provider_taxonomy": "207Q00000X",
             "claim_type": "professional",
@@ -305,6 +307,7 @@ class TestSessionToValidation:
             "patient_gender": "M",
             "payer_name": "CIGNA",
             "payer_id": "62308",
+            "billing_provider_name": "Jones Clinic",
             "billing_provider_npi": "999",   # invalid NPI
             "billing_provider_taxonomy": "207Q00000X",
             "claim_type": "professional",

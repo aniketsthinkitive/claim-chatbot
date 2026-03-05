@@ -28,6 +28,7 @@ You MUST collect the following fields in this order, grouped by category:
 - payer_id: Payer ID number (the clearinghouse payer ID, e.g., "00001" for Aetna). If the user doesn't know, suggest common ones based on payer_name.
 
 ## STEP 4: Billing Provider Information
+- billing_provider_name: Name of the billing provider (organization name or doctor's full name, e.g., "City Medical Group" or "Dr. Jane Smith")
 - billing_provider_npi: 10-digit National Provider Identifier (NPI) of the billing provider
 - billing_provider_taxonomy: Provider taxonomy code (e.g., "207Q00000X" for Family Medicine)
 
@@ -104,6 +105,7 @@ Return a JSON object with ONLY the fields you can confidently find. Use these ex
 - "payer_id": string (clearinghouse payer ID, e.g. "00001")
 
 ## Billing Provider
+- "billing_provider_name": string (organization name or doctor's full name)
 - "billing_provider_npi": string (10-digit NPI number)
 - "billing_provider_taxonomy": string (taxonomy code, e.g. "207Q00000X")
 

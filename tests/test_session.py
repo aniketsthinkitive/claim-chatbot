@@ -6,7 +6,7 @@ def test_claim_session_defaults():
     assert session.session_id == "abc"
     assert session.status == "collecting"
     assert session.collected_fields == {}
-    assert len(session.missing_fields) == 19
+    assert len(session.missing_fields) == 20
     assert session.missing_fields == [
         "subscriber_first_name",
         "subscriber_last_name",
@@ -20,6 +20,7 @@ def test_claim_session_defaults():
         "patient_gender",
         "payer_name",
         "payer_id",
+        "billing_provider_name",
         "billing_provider_npi",
         "billing_provider_taxonomy",
         "claim_type",
