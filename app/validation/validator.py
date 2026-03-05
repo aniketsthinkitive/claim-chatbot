@@ -1,114 +1,124 @@
-from pydantic import BaseModel
+"""Claim validation — thin wrapper around claim-validator library."""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# Check if claim-validator library is available
+_library_available = False
+try:
+    from claim_validator import validate as _cv_validate
+    _library_available = True
+except ImportError:
+    logger.warning("claim-validator library not installed, using fallback validation")
 
 
-class ValidationResult(BaseModel):
-    status: str  # "pass", "fail", "needs_review"
-    issues: list[str]
-    recommendations: list[str]
-    raw_output: dict
+def validate_claim(payload: dict, *, clearinghouse_config: dict | None = None) -> dict:
+    """Validate a claim payload and return results as a plain dict."""
+    if not _library_available:
+        logger.info("Using fallback validation (library unavailable)")
+        return _fallback_validate(payload)
 
+    try:
+        kwargs: dict[str, Any] = {}
+        if clearinghouse_config:
+            kwargs["clearinghouse_config"] = clearinghouse_config
+        result = _cv_validate(payload, **kwargs)
 
-class ClaimValidator:
-    """Validates the collected claim payload before submission to ClaimMD."""
+        findings = []
+        for f in result.findings:
+            sev = f.severity.value if hasattr(f.severity, "value") else str(f.severity)
+            findings.append({
+                "code": f.code,
+                "message": f.message,
+                "severity": sev,
+                "field_name": getattr(f, "field_name", None) or "",
+                "suggestion": getattr(f, "suggestion", None) or "",
+            })
 
-    def validate(self, payload: dict) -> ValidationResult:
-        issues = []
-        recommendations = []
+        errors = [f for f in findings if f["severity"] == "error"]
+        warnings = [f for f in findings if f["severity"] == "warning"]
 
-        # Billing provider checks
-        npi = payload.get("billing_provider_npi", "")
-        if not npi or len(str(npi)) != 10:
-            issues.append(f"Invalid NPI: must be exactly 10 digits (got '{npi}')")
-
-        taxonomy = payload.get("billing_provider_taxonomy", "")
-        if not taxonomy:
-            issues.append("Missing billing provider taxonomy code")
-
-        # Subscriber checks
-        if not payload.get("subscriber_id"):
-            issues.append("Missing subscriber/member ID")
-        if not payload.get("subscriber_first_name"):
-            issues.append("Missing subscriber first name")
-        if not payload.get("subscriber_last_name"):
-            issues.append("Missing subscriber last name")
-        if not payload.get("subscriber_dob"):
-            issues.append("Missing subscriber date of birth")
-        if payload.get("subscriber_gender", "") not in ("M", "F"):
-            issues.append("Subscriber gender must be 'M' or 'F'")
-
-        # Patient checks
-        if not payload.get("patient_first_name"):
-            issues.append("Missing patient first name")
-        if not payload.get("patient_last_name"):
-            issues.append("Missing patient last name")
-        if payload.get("patient_gender", "") not in ("M", "F"):
-            issues.append("Patient gender must be 'M' or 'F'")
-
-        relationship = payload.get("patient_relationship", "")
-        if relationship not in ("self", "spouse", "child", "other"):
-            issues.append(f"Invalid patient relationship: '{relationship}'")
-
-        # Payer checks
-        if not payload.get("payer_id"):
-            issues.append("Missing payer ID")
-        if not payload.get("payer_name"):
-            issues.append("Missing payer name")
-
-        # Claim type
-        claim_type = payload.get("claim_type", "")
-        if claim_type not in ("professional", "institutional"):
-            issues.append(f"Invalid claim type: '{claim_type}' (must be 'professional' or 'institutional')")
-
-        # Place of service
-        pos = payload.get("place_of_service", "")
-        if not pos or len(str(pos)) != 2:
-            issues.append(f"Invalid place of service code: '{pos}' (must be 2 digits)")
-
-        # Total charge
-        total_charge = payload.get("total_charge", 0)
-        try:
-            charge_val = float(total_charge)
-            if charge_val <= 0:
-                issues.append("Total charge must be greater than 0")
-            if charge_val > 999999:
-                recommendations.append("Very high total charge - verify amount is correct")
-        except (ValueError, TypeError):
-            issues.append(f"Invalid total charge: '{total_charge}'")
-
-        # Diagnosis codes
-        diag_codes = payload.get("diagnosis_codes", [])
-        if not diag_codes:
-            issues.append("At least one diagnosis code is required")
-        else:
-            has_principal = any(d.get("type") == "principal" for d in diag_codes)
-            if not has_principal:
-                issues.append("At least one principal diagnosis code is required")
-
-        # Service lines
-        lines = payload.get("lines", [])
-        if not lines:
-            issues.append("At least one service line is required")
-        else:
-            line_total = sum(float(l.get("charge_amount", 0)) for l in lines)
-            try:
-                if abs(line_total - float(total_charge)) > 0.01:
-                    recommendations.append(
-                        f"Service line charges ({line_total:.2f}) don't match "
-                        f"total charge ({float(total_charge):.2f}) - please verify"
-                    )
-            except (ValueError, TypeError):
-                pass
-
-        # Determine status
-        if issues:
-            status = "needs_review" if len(issues) <= 3 else "fail"
-        else:
+        if result.passed:
             status = "pass"
-            recommendations.append("All validation checks passed. Ready for ClaimMD submission.")
+        elif len(errors) <= 3:
+            status = "needs_review"
+        else:
+            status = "fail"
 
-        return ValidationResult(
-            status=status,
-            issues=issues,
-            recommendations=recommendations,
-            raw_output={"fields_checked": list(payload.keys())},
-        )
+        return {
+            "status": status,
+            "passed": result.passed,
+            "findings": findings,
+            "total_findings": len(findings),
+            "total_errors": len(errors),
+            "total_warnings": len(warnings),
+            "execution_time": result.execution_time,
+            "phase_results": [
+                {
+                    "phase": pr.phase,
+                    "findings_count": len(pr.findings),
+                    "execution_time": pr.execution_time,
+                }
+                for pr in result.phase_results
+            ],
+        }
+    except Exception as e:
+        logger.error("Validator error, using fallback: %s", e, exc_info=True)
+        return _fallback_validate(payload)
+
+
+def _fallback_validate(payload: dict) -> dict:
+    """Basic field checks when claim-validator library is unavailable."""
+    issues = []
+    npi = payload.get("billing_provider_npi", "")
+    if not npi or len(str(npi)) != 10:
+        issues.append({
+            "code": "BASIC_INVALID_NPI",
+            "message": f"Invalid NPI: must be exactly 10 digits (got '{npi}')",
+            "severity": "error",
+            "field_name": "billing_provider_npi",
+            "suggestion": "Provide a valid 10-digit NPI number",
+        })
+    if not payload.get("subscriber_id"):
+        issues.append({
+            "code": "BASIC_MISSING_SUBSCRIBER_ID",
+            "message": "Missing subscriber/member ID",
+            "severity": "error",
+            "field_name": "subscriber_id",
+            "suggestion": "Provide the subscriber's member ID",
+        })
+    if not payload.get("diagnosis_codes"):
+        issues.append({
+            "code": "BASIC_MISSING_DIAGNOSIS",
+            "message": "At least one diagnosis code is required",
+            "severity": "error",
+            "field_name": "diagnosis_codes",
+            "suggestion": "Add at least one ICD-10 diagnosis code",
+        })
+    if not payload.get("lines"):
+        issues.append({
+            "code": "BASIC_MISSING_LINES",
+            "message": "At least one service line is required",
+            "severity": "error",
+            "field_name": "lines",
+            "suggestion": "Add at least one service line with CPT code",
+        })
+
+    errors = [f for f in issues if f["severity"] == "error"]
+    status = "pass" if not errors else ("needs_review" if len(errors) <= 3 else "fail")
+
+    return {
+        "status": status,
+        "passed": len(errors) == 0,
+        "findings": issues,
+        "total_findings": len(issues),
+        "total_errors": len(errors),
+        "total_warnings": 0,
+        "execution_time": 0.0,
+        "phase_results": [{"phase": "fallback", "findings_count": len(issues), "execution_time": 0.0}],
+        "fallback": True,
+    }
