@@ -65,6 +65,12 @@ class ChatController:
             if field in session.missing_fields:
                 session.update_field(field, value)
 
+        # Safety net: if bot didn't ask for the next field, append the question
+        if session.missing_fields and "?" not in bot_message:
+            next_field = session.missing_fields[0]
+            label = next_field.replace("_", " ").replace("subscriber ", "").replace("patient ", "").replace("billing provider ", "")
+            bot_message += f"\n\nCould you please provide the {label}?"
+
         session.add_message("bot", bot_message)
 
         if session.all_fields_collected():
