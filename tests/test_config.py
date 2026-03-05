@@ -42,3 +42,25 @@ def test_settings_required_claim_fields():
         "service_lines",
     ]
     assert settings.required_claim_fields == expected
+
+
+def test_clearinghouse_config_defaults():
+    from app.config import Settings
+    s = Settings()
+    assert s.clearinghouse_provider == ""
+    assert s.waystar_api_key == ""
+
+def test_clearinghouse_config_dict_empty_when_no_provider():
+    from app.config import Settings
+    s = Settings()
+    assert s.clearinghouse_config is None
+
+def test_clearinghouse_config_dict_with_provider(monkeypatch):
+    monkeypatch.setenv("CLEARINGHOUSE_PROVIDER", "waystar")
+    monkeypatch.setenv("WAYSTAR_API_KEY", "test-key")
+    from app.config import Settings
+    s = Settings()
+    cfg = s.clearinghouse_config
+    assert cfg is not None
+    assert cfg["provider"] == "waystar"
+    assert cfg["api_key"] == "test-key"
