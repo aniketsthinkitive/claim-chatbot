@@ -194,7 +194,11 @@ class ChatController:
         session.status = "confirming"
         payload = session.build_claim_payload()
 
-        result = validate_claim(payload, clearinghouse_config=settings.clearinghouse_config)
+        result = validate_claim(
+            payload,
+            clearinghouse_config=settings.clearinghouse_config,
+            ai_config=settings.ai_config,
+        )
         session.validation_result = result
 
         return {

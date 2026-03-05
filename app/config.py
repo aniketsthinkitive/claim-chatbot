@@ -21,6 +21,11 @@ class Settings(BaseModel):
     waystar_password: str = Field(default_factory=lambda: os.getenv("WAYSTAR_PASSWORD", ""))
     waystar_cust_id: str = Field(default_factory=lambda: os.getenv("WAYSTAR_CUST_ID", ""))
 
+    # AI config for claim-validator's AI validation phase
+    ai_provider: str = Field(default_factory=lambda: os.getenv("AI_PROVIDER", ""))
+    ai_api_key: str = Field(default_factory=lambda: os.getenv("AI_API_KEY", ""))
+    ai_model: str = Field(default_factory=lambda: os.getenv("AI_MODEL", ""))
+
     @property
     def clearinghouse_config(self) -> dict | None:
         """Build clearinghouse config dict for claim-validator, or None if not configured."""
@@ -33,6 +38,17 @@ class Settings(BaseModel):
             "user_id": self.waystar_user_id,
             "password": self.waystar_password,
             "cust_id": self.waystar_cust_id,
+        }
+
+    @property
+    def ai_config(self) -> dict | None:
+        """Build AI config dict for claim-validator, or None if not configured."""
+        if not self.ai_provider:
+            return None
+        return {
+            "provider": self.ai_provider,
+            "api_key": self.ai_api_key or self.openai_api_key,
+            "model": self.ai_model,
         }
 
     # Fields collected from the patient/user in conversation order

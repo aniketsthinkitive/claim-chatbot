@@ -44,13 +44,16 @@ def test_settings_required_claim_fields():
     assert settings.required_claim_fields == expected
 
 
-def test_clearinghouse_config_defaults():
+def test_clearinghouse_config_defaults(monkeypatch):
+    monkeypatch.delenv("CLEARINGHOUSE_PROVIDER", raising=False)
+    monkeypatch.delenv("WAYSTAR_API_KEY", raising=False)
     from app.config import Settings
     s = Settings()
     assert s.clearinghouse_provider == ""
     assert s.waystar_api_key == ""
 
-def test_clearinghouse_config_dict_empty_when_no_provider():
+def test_clearinghouse_config_dict_empty_when_no_provider(monkeypatch):
+    monkeypatch.delenv("CLEARINGHOUSE_PROVIDER", raising=False)
     from app.config import Settings
     s = Settings()
     assert s.clearinghouse_config is None

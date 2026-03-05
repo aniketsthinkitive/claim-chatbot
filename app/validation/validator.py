@@ -16,7 +16,12 @@ except ImportError:
     logger.warning("claim-validator library not installed, using fallback validation")
 
 
-def validate_claim(payload: dict, *, clearinghouse_config: dict | None = None) -> dict:
+def validate_claim(
+    payload: dict,
+    *,
+    clearinghouse_config: dict | None = None,
+    ai_config: dict | None = None,
+) -> dict:
     """Validate a claim payload and return results as a plain dict."""
     if not _library_available:
         logger.info("Using fallback validation (library unavailable)")
@@ -26,6 +31,8 @@ def validate_claim(payload: dict, *, clearinghouse_config: dict | None = None) -
         kwargs: dict[str, Any] = {}
         if clearinghouse_config:
             kwargs["clearinghouse_config"] = clearinghouse_config
+        if ai_config:
+            kwargs["ai_config"] = ai_config
         result = _cv_validate(payload, **kwargs)
 
         findings = []
