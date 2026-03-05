@@ -1,4 +1,4 @@
-from app.validation.validator import ClaimValidator, ValidationResult
+from app.validation.validator import create_validator, ValidationResult
 
 def test_validation_result_model():
     result = ValidationResult(
@@ -18,7 +18,7 @@ def test_validation_result_fail():
     assert len(result.issues) == 2
 
 def test_validator_validate_returns_result():
-    validator = ClaimValidator()
+    validator = create_validator()
     result = validator.validate({
         "subscriber_first_name": "John",
         "subscriber_last_name": "Doe",
@@ -45,7 +45,7 @@ def test_validator_validate_returns_result():
 
 def test_validator_validate_with_documents():
     """Validator works with a partial ClaimMD payload (some fields missing)."""
-    validator = ClaimValidator()
+    validator = create_validator()
     result = validator.validate({
         "subscriber_first_name": "Jane",
         "subscriber_last_name": "Smith",
