@@ -6,7 +6,7 @@ from openai import AsyncOpenAI
 from app.chat.prompts import get_system_prompt
 from app.chat.session import ClaimSession
 from app.config import settings
-from app.validation.validator import validate_claim
+from app.validation.validator import check_eligibility, validate_claim
 
 logger = logging.getLogger(__name__)
 
@@ -194,19 +194,26 @@ class ChatController:
         session.status = "confirming"
         payload = session.build_claim_payload()
 
+        # Check eligibility first (if clearinghouse configured)
+        eligibility = None
+        if settings.clearinghouse_config:
+            eligibility = check_eligibility(payload, settings.clearinghouse_config)
+
         result = validate_claim(
             payload,
-            clearinghouse_config=settings.clearinghouse_config,
             ai_config=settings.ai_config,
         )
         session.validation_result = result
 
-        return {
+        response = {
             "type": "validation_result",
             "content": preceding_message,
             "result": result,
             "claim_payload": payload,
         }
+        if eligibility:
+            response["eligibility"] = eligibility
+        return response
 
     def _build_state_context(self, session: ClaimSession) -> str:
         collected_parts = []

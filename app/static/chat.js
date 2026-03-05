@@ -38,6 +38,9 @@ function connect() {
             if (data.content) {
                 addMessage(data.content, "bot");
             }
+            if (data.eligibility) {
+                addEligibilityResult(data.eligibility);
+            }
             addValidationResult(data.result);
         } else if (data.type === "extraction_result") {
             addMessage("Extracted fields from your document.", "bot");
@@ -126,6 +129,80 @@ function addValidationResult(result) {
             html += "<li>" + escapeHtml(rec) + "</li>";
         });
         html += "</ul></div>";
+    }
+
+    div.innerHTML = html;
+    messagesDiv.appendChild(div);
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+function addEligibilityResult(elig) {
+    const div = document.createElement("div");
+    div.classList.add("message", "eligibility");
+
+    var statusIcon = elig.eligible === true ? "\u2705" :
+        elig.eligible === false ? "\u274C" : "\u2753";
+    var statusText = elig.eligible === true ? "Patient is Eligible" :
+        elig.eligible === false ? "Patient is NOT Eligible" :
+        elig.status === "error" ? "Eligibility Check Failed" : "Eligibility Unknown";
+    var statusClass = elig.eligible === true ? "elig-active" :
+        elig.eligible === false ? "elig-inactive" : "elig-unknown";
+
+    var html = '<div class="elig-header ' + statusClass + '">' +
+        statusIcon + ' ' + statusText + '</div>';
+
+    // Subscriber info
+    if (elig.subscriber && elig.subscriber.first) {
+        html += '<div class="elig-subscriber">' +
+            '<strong>Subscriber:</strong> ' +
+            escapeHtml(elig.subscriber.first + ' ' + elig.subscriber.last) +
+            ' (ID: ' + escapeHtml(elig.subscriber.member_id || '') + ')' +
+            '</div>';
+    }
+
+    // Plan info
+    if (elig.plan_name) {
+        html += '<div class="elig-plan-name"><strong>Plan:</strong> ' +
+            escapeHtml(elig.plan_name) + '</div>';
+    }
+
+    // Plan details
+    if (elig.plans && elig.plans.length > 0) {
+        html += '<div class="elig-plans">';
+        elig.plans.forEach(function (p) {
+            if (!p.plan_name && !p.deductible_in) return;
+            html += '<div class="elig-plan-card">';
+            if (p.plan_name) {
+                html += '<div class="elig-plan-title">' + escapeHtml(p.plan_name) +
+                    ' <span class="elig-plan-status ' +
+                    (p.active ? 'active' : 'inactive') + '">' +
+                    escapeHtml(p.status || (p.active ? 'ACTIVE' : 'INACTIVE')) +
+                    '</span></div>';
+            }
+            var details = [];
+            if (p.deductible_in) details.push('Deductible In: $' + escapeHtml(p.deductible_in));
+            if (p.deductible_remaining) details.push('Remaining: $' + escapeHtml(p.deductible_remaining));
+            if (p.oop_remaining) details.push('OOP Remaining: $' + escapeHtml(p.oop_remaining));
+            if (p.coinsurance_in) details.push('CoIns In: ' + (parseFloat(p.coinsurance_in) * 100) + '%');
+            if (details.length > 0) {
+                html += '<div class="elig-plan-details">' + details.join(' &middot; ') + '</div>';
+            }
+            html += '</div>';
+        });
+        html += '</div>';
+    }
+
+    // Errors
+    if (elig.errors && elig.errors.length > 0) {
+        html += '<div class="elig-errors">';
+        elig.errors.forEach(function (e) {
+            html += '<div class="elig-error">' + escapeHtml(e) + '</div>';
+        });
+        html += '</div>';
+    }
+
+    if (elig.reference_id) {
+        html += '<div class="elig-ref">Ref: ' + escapeHtml(elig.reference_id) + '</div>';
     }
 
     div.innerHTML = html;

@@ -1,5 +1,11 @@
+import os
 from unittest.mock import patch
-from app.validation.validator import validate_claim
+
+from dotenv import load_dotenv
+
+from app.validation.validator import check_eligibility, validate_claim
+
+load_dotenv()
 
 
 def test_validate_claim_returns_dict():
@@ -54,3 +60,40 @@ def test_validate_claim_fallback_on_import_error():
     assert isinstance(result, dict)
     assert result["status"] in ("pass", "fail", "needs_review")
     assert result.get("fallback") is True
+
+
+def test_check_eligibility_live():
+    """Live eligibility check using Waystar test data."""
+    api_key = os.getenv("CLEARINGHOUSE_API_KEY", "")
+    if not api_key:
+        import pytest
+        pytest.skip("Waystar credentials not configured")
+
+    claim_payload = {
+        "payer_id": "66666",
+        "billing_provider_npi": "1234567890",
+        "subscriber_id": "ABC123456",
+        "subscriber_first_name": "JOHN",
+        "subscriber_last_name": "DOE",
+        "subscriber_dob": "1990-01-15",
+    }
+    config = {
+        "provider": "waystar",
+        "api_key": api_key,
+        "user_id": os.getenv("CLEARINGHOUSE_USER_ID", ""),
+        "password": os.getenv("CLEARINGHOUSE_PASSWORD", ""),
+        "cust_id": os.getenv("CLEARINGHOUSE_CUST_ID", ""),
+    }
+    result = check_eligibility(claim_payload, config)
+    assert result["status"] == "active"
+    assert result["eligible"] is True
+    assert result["subscriber"]["first"] == "JOHN"
+    assert result["subscriber"]["last"] == "DOE"
+    assert len(result["plans"]) > 0
+
+
+def test_check_eligibility_unavailable():
+    """check_eligibility returns unavailable when library missing."""
+    with patch("app.validation.validator._waystar_available", False):
+        result = check_eligibility({}, {})
+    assert result["status"] == "unavailable"

@@ -9,11 +9,18 @@ logger = logging.getLogger(__name__)
 
 # Check if claim-validator library is available
 _library_available = False
+_waystar_available = False
 try:
     from claim_validator import validate as _cv_validate
     _library_available = True
 except ImportError:
     logger.warning("claim-validator library not installed, using fallback validation")
+
+try:
+    from claim_validator.clearinghouse.providers.waystar import WaystarClient
+    _waystar_available = True
+except ImportError:
+    pass
 
 
 def validate_claim(
@@ -129,3 +136,77 @@ def _fallback_validate(payload: dict) -> dict:
         "phase_results": [{"phase": "fallback", "findings_count": len(issues), "execution_time": 0.0}],
         "fallback": True,
     }
+
+
+def check_eligibility(
+    claim_payload: dict,
+    clearinghouse_config: dict,
+) -> dict:
+    """Check patient eligibility using collected claim fields.
+
+    Maps claim fields to eligibility request fields and calls Waystar.
+    Returns a plain dict with eligibility status, plan info, and errors.
+    """
+    if not _waystar_available:
+        return {"status": "unavailable", "message": "Waystar client not available"}
+
+    # Map claim fields → eligibility request fields
+    request = {
+        "payer_id": claim_payload.get("payer_id", ""),
+        "npi": claim_payload.get("billing_provider_npi", ""),
+        "subscriber_id": claim_payload.get("subscriber_id", ""),
+        "first_name": claim_payload.get("subscriber_first_name", ""),
+        "last_name": claim_payload.get("subscriber_last_name", ""),
+        "dob": claim_payload.get("subscriber_dob", ""),
+        "service_type": "30",
+    }
+
+    try:
+        config = dict(clearinghouse_config)
+        config.pop("provider", None)
+        client = WaystarClient(**config)
+        try:
+            result = client.check_eligibility(request)
+            plan_info = result.plan_info if isinstance(result.plan_info, dict) else {}
+            # Extract key details for display
+            subscriber = plan_info.get("Subscriber", {})
+            plans = plan_info.get("Plans", [])
+            plan_summary = []
+            for p in plans:
+                plan_summary.append({
+                    "plan_name": p.get("InsurancePlanName", p.get("Name", "")),
+                    "status": p.get("FileStatusDescription", ""),
+                    "active": p.get("IsActive", False),
+                    "deductible_in": p.get("DeductibleInNetwork", ""),
+                    "deductible_out": p.get("DeductibleOutNetwork", ""),
+                    "deductible_remaining": p.get("PlanBinDedRem", ""),
+                    "oop_remaining": p.get("PlanBinOopRem", ""),
+                    "coinsurance_in": p.get("CoInsuranceInNetwork", ""),
+                    "coinsurance_out": p.get("CoInsuranceOutNetwork", ""),
+                })
+
+            return {
+                "status": result.status,
+                "eligible": result.eligible,
+                "reference_id": result.reference_id,
+                "errors": result.errors,
+                "subscriber": {
+                    "first": subscriber.get("First", ""),
+                    "last": subscriber.get("Last", ""),
+                    "dob": subscriber.get("Dob", ""),
+                    "member_id": subscriber.get("MemberId", ""),
+                },
+                "plan_name": plan_info.get("PlanName", ""),
+                "plans": plan_summary,
+                "request": request,
+            }
+        finally:
+            client.close()
+    except Exception as e:
+        logger.error("Eligibility check failed: %s", e, exc_info=True)
+        return {
+            "status": "error",
+            "eligible": None,
+            "errors": [str(e)],
+            "request": request,
+        }

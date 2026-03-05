@@ -46,11 +46,11 @@ def test_settings_required_claim_fields():
 
 def test_clearinghouse_config_defaults(monkeypatch):
     monkeypatch.delenv("CLEARINGHOUSE_PROVIDER", raising=False)
-    monkeypatch.delenv("WAYSTAR_API_KEY", raising=False)
+    monkeypatch.delenv("CLEARINGHOUSE_API_KEY", raising=False)
     from app.config import Settings
     s = Settings()
     assert s.clearinghouse_provider == ""
-    assert s.waystar_api_key == ""
+    assert s.clearinghouse_api_key == ""
 
 def test_clearinghouse_config_dict_empty_when_no_provider(monkeypatch):
     monkeypatch.delenv("CLEARINGHOUSE_PROVIDER", raising=False)
@@ -60,10 +60,14 @@ def test_clearinghouse_config_dict_empty_when_no_provider(monkeypatch):
 
 def test_clearinghouse_config_dict_with_provider(monkeypatch):
     monkeypatch.setenv("CLEARINGHOUSE_PROVIDER", "waystar")
-    monkeypatch.setenv("WAYSTAR_API_KEY", "test-key")
+    monkeypatch.setenv("CLEARINGHOUSE_API_KEY", "test-key")
+    monkeypatch.setenv("CLEARINGHOUSE_USER_ID", "test-user")
+    monkeypatch.setenv("CLEARINGHOUSE_PASSWORD", "test-pass")
+    monkeypatch.setenv("CLEARINGHOUSE_CUST_ID", "test-cust")
     from app.config import Settings
     s = Settings()
     cfg = s.clearinghouse_config
     assert cfg is not None
     assert cfg["provider"] == "waystar"
     assert cfg["api_key"] == "test-key"
+    assert cfg["user_id"] == "test-user"

@@ -13,32 +13,42 @@ class Settings(BaseModel):
     upload_dir: str = "uploads"
 
     # Clearinghouse config (passed through to claim-validator library)
-    # Using default_factory so env vars are read at instantiation time, not class definition time
     clearinghouse_provider: str = Field(default_factory=lambda: os.getenv("CLEARINGHOUSE_PROVIDER", ""))
-    waystar_api_key: str = Field(default_factory=lambda: os.getenv("WAYSTAR_API_KEY", ""))
-    waystar_secret: str = Field(default_factory=lambda: os.getenv("WAYSTAR_SECRET", ""))
-    waystar_user_id: str = Field(default_factory=lambda: os.getenv("WAYSTAR_USER_ID", ""))
-    waystar_password: str = Field(default_factory=lambda: os.getenv("WAYSTAR_PASSWORD", ""))
-    waystar_cust_id: str = Field(default_factory=lambda: os.getenv("WAYSTAR_CUST_ID", ""))
+    clearinghouse_api_key: str = Field(default_factory=lambda: os.getenv("CLEARINGHOUSE_API_KEY", ""))
+    clearinghouse_secret: str = Field(default_factory=lambda: os.getenv("CLEARINGHOUSE_SECRET", ""))
+    clearinghouse_user_id: str = Field(default_factory=lambda: os.getenv("CLEARINGHOUSE_USER_ID", ""))
+    clearinghouse_password: str = Field(default_factory=lambda: os.getenv("CLEARINGHOUSE_PASSWORD", ""))
+    clearinghouse_cust_id: str = Field(default_factory=lambda: os.getenv("CLEARINGHOUSE_CUST_ID", ""))
+    clearinghouse_base_url: str = Field(default_factory=lambda: os.getenv("CLEARINGHOUSE_BASE_URL", ""))
+    clearinghouse_eligibility_base_url: str = Field(default_factory=lambda: os.getenv("CLEARINGHOUSE_ELIGIBILITY_BASE_URL", ""))
+    clearinghouse_prior_auth_base_url: str = Field(default_factory=lambda: os.getenv("CLEARINGHOUSE_PRIOR_AUTH_BASE_URL", ""))
 
     # AI config for claim-validator's AI validation phase
-    ai_provider: str = Field(default_factory=lambda: os.getenv("AI_PROVIDER", ""))
-    ai_api_key: str = Field(default_factory=lambda: os.getenv("AI_API_KEY", ""))
-    ai_model: str = Field(default_factory=lambda: os.getenv("AI_MODEL", ""))
+    ai_provider: str = Field(default_factory=lambda: os.getenv("CLAIM_VALIDATOR_AI_PROVIDER", ""))
+    ai_api_key: str = Field(default_factory=lambda: os.getenv("CLAIM_VALIDATOR_AI_API_KEY", ""))
+    ai_model: str = Field(default_factory=lambda: os.getenv("CLAIM_VALIDATOR_AI_MODEL", ""))
 
     @property
     def clearinghouse_config(self) -> dict | None:
         """Build clearinghouse config dict for claim-validator, or None if not configured."""
         if not self.clearinghouse_provider:
             return None
-        return {
+        config: dict = {
             "provider": self.clearinghouse_provider,
-            "api_key": self.waystar_api_key,
-            "secret": self.waystar_secret,
-            "user_id": self.waystar_user_id,
-            "password": self.waystar_password,
-            "cust_id": self.waystar_cust_id,
+            "api_key": self.clearinghouse_api_key,
+            "user_id": self.clearinghouse_user_id,
+            "password": self.clearinghouse_password,
+            "cust_id": self.clearinghouse_cust_id,
         }
+        if self.clearinghouse_secret:
+            config["secret"] = self.clearinghouse_secret
+        if self.clearinghouse_base_url:
+            config["base_url"] = self.clearinghouse_base_url
+        if self.clearinghouse_eligibility_base_url:
+            config["eligibility_base_url"] = self.clearinghouse_eligibility_base_url
+        if self.clearinghouse_prior_auth_base_url:
+            config["prior_auth_base_url"] = self.clearinghouse_prior_auth_base_url
+        return config
 
     @property
     def ai_config(self) -> dict | None:
