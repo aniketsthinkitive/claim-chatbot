@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -51,45 +52,7 @@ def validate_claim(
 
         cv_settings = ClaimValidatorSettings(**settings_kwargs) if settings_kwargs else None
         result = _cv_validate(payload, settings=cv_settings)
-
-        findings = []
-        for f in result.findings:
-            sev = f.severity.value if hasattr(f.severity, "value") else str(f.severity)
-            findings.append({
-                "code": f.code,
-                "message": f.message,
-                "severity": sev,
-                "field_name": getattr(f, "field_name", None) or "",
-                "suggestion": getattr(f, "suggestion", None) or "",
-            })
-
-        errors = [f for f in findings if f["severity"] == "error"]
-        warnings = [f for f in findings if f["severity"] == "warning"]
-
-        if result.passed:
-            status = "pass"
-        elif len(errors) <= 3:
-            status = "needs_review"
-        else:
-            status = "fail"
-
-        return {
-            "status": status,
-            "passed": result.passed,
-            "findings": findings,
-            "total_findings": len(findings),
-            "total_errors": len(errors),
-            "total_warnings": len(warnings),
-            "execution_time": result.execution_time,
-            "phase_results": [
-                {
-                    "phase": pr.phase,
-                    "findings_count": len(pr.findings),
-                    "execution_time": pr.execution_time,
-                }
-                for pr in result.phase_results
-            ],
-        }
+        return _build_result_dict(result)
     except Exception as e:
         logger.error("Validator error, using fallback: %s", e, exc_info=True)
         return _fallback_validate(payload)
@@ -101,7 +64,12 @@ async def validate_claim_phased(
     ai_config: dict | None = None,
     progress_callback=None,
 ) -> dict:
-    """Validate claim with per-phase progress callbacks."""
+    """Validate claim with per-phase progress callbacks.
+
+    Note: clearinghouse_config is intentionally omitted — the pipeline's
+    clearinghouse phase submits claims, while eligibility is a separate
+    operation handled by check_eligibility().
+    """
     if not _library_available:
         return _fallback_validate(payload)
 
@@ -119,54 +87,61 @@ async def validate_claim_phased(
         if progress_callback:
             await progress_callback("rule_based", "running")
 
-        result = _cv_validate(payload, settings=cv_settings)
+        # Run synchronous validation in a thread to avoid blocking the event loop
+        result = await asyncio.to_thread(_cv_validate, payload, settings=cv_settings)
 
         # Report each completed phase
-        phase_results = []
         for pr in result.phase_results:
-            phase_results.append({
-                "phase": pr.phase,
-                "findings_count": len(pr.findings),
-                "execution_time": pr.execution_time,
-            })
             if progress_callback:
                 status = "pass" if len(pr.findings) == 0 else f"{len(pr.findings)} finding(s)"
                 await progress_callback(pr.phase, status)
 
-        findings = []
-        for f in result.findings:
-            sev = f.severity.value if hasattr(f.severity, "value") else str(f.severity)
-            findings.append({
-                "code": f.code,
-                "message": f.message,
-                "severity": sev,
-                "field_name": getattr(f, "field_name", None) or "",
-                "suggestion": getattr(f, "suggestion", None) or "",
-            })
-
-        errors = [f for f in findings if f["severity"] == "error"]
-        warnings = [f for f in findings if f["severity"] == "warning"]
-
-        if result.passed:
-            status = "pass"
-        elif len(errors) <= 3:
-            status = "needs_review"
-        else:
-            status = "fail"
-
-        return {
-            "status": status,
-            "passed": result.passed,
-            "findings": findings,
-            "total_findings": len(findings),
-            "total_errors": len(errors),
-            "total_warnings": len(warnings),
-            "execution_time": result.execution_time,
-            "phase_results": phase_results,
-        }
+        return _build_result_dict(result)
     except Exception as e:
         logger.error("Validator error, using fallback: %s", e, exc_info=True)
         return _fallback_validate(payload)
+
+
+def _build_result_dict(result) -> dict:
+    """Convert a claim_validator Result into a plain dict."""
+    findings = []
+    for f in result.findings:
+        sev = f.severity.value if hasattr(f.severity, "value") else str(f.severity)
+        findings.append({
+            "code": f.code,
+            "message": f.message,
+            "severity": sev,
+            "field_name": getattr(f, "field_name", None) or "",
+            "suggestion": getattr(f, "suggestion", None) or "",
+        })
+
+    errors = [f for f in findings if f["severity"] == "error"]
+    warnings = [f for f in findings if f["severity"] == "warning"]
+
+    if result.passed:
+        status = "pass"
+    elif len(errors) <= 3:
+        status = "needs_review"
+    else:
+        status = "fail"
+
+    return {
+        "status": status,
+        "passed": result.passed,
+        "findings": findings,
+        "total_findings": len(findings),
+        "total_errors": len(errors),
+        "total_warnings": len(warnings),
+        "execution_time": result.execution_time,
+        "phase_results": [
+            {
+                "phase": pr.phase,
+                "findings_count": len(pr.findings),
+                "execution_time": pr.execution_time,
+            }
+            for pr in result.phase_results
+        ],
+    }
 
 
 def _fallback_validate(payload: dict) -> dict:

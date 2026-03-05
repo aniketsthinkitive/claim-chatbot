@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 
@@ -203,11 +204,14 @@ class ChatController:
 
         async def send_progress(phase, status):
             if websocket:
-                await websocket.send_json({
-                    "type": "validation_progress",
-                    "phase": phase,
-                    "status": status,
-                })
+                try:
+                    await websocket.send_json({
+                        "type": "validation_progress",
+                        "phase": phase,
+                        "status": status,
+                    })
+                except Exception:
+                    logger.debug("WebSocket closed during progress update")
 
         # Validation (rule-based + AI)
         result = await validate_claim_phased(
@@ -220,7 +224,9 @@ class ChatController:
         eligibility = None
         if settings.clearinghouse_config:
             await send_progress("eligibility", "running")
-            eligibility = check_eligibility(payload, settings.clearinghouse_config)
+            eligibility = await asyncio.to_thread(
+                check_eligibility, payload, settings.clearinghouse_config
+            )
             elig_status = "eligible" if eligibility.get("eligible") else "error"
             await send_progress("eligibility", elig_status)
 
