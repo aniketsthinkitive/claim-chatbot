@@ -1,17 +1,19 @@
 import json
+import logging
 
 from openai import AsyncOpenAI
 
 from app.chat.prompts import get_system_prompt
 from app.chat.session import ClaimSession
 from app.config import settings
-from app.validation.validator import ClaimValidator
+from app.validation.validator import validate_claim
+
+logger = logging.getLogger(__name__)
 
 
 class ChatController:
     def __init__(self, openai_api_key: str | None = None):
         self.openai = AsyncOpenAI(api_key=openai_api_key or settings.openai_api_key)
-        self.validator = ClaimValidator()
 
     def get_welcome_message(self) -> dict:
         return {
@@ -39,6 +41,7 @@ class ChatController:
             model=settings.openai_model,
             messages=messages,
             temperature=0.3,
+            response_format={"type": "json_object"},
         )
 
         content = response.choices[0].message.content.strip()
@@ -67,6 +70,11 @@ class ChatController:
         if session.all_fields_collected():
             return self._build_summary(session, bot_message)
 
+        logger.debug(
+            "Fields still missing after extraction: %s (extracted: %s)",
+            session.missing_fields,
+            list(extracted.keys()),
+        )
         return {"type": "bot_message", "content": bot_message}
 
     async def handle_document_upload(
@@ -182,17 +190,17 @@ class ChatController:
         return "\n".join(lines)
 
     def _build_summary(self, session: ClaimSession, preceding_message: str) -> dict:
-        """Build and return the claim payload summary for confirmation."""
+        """Build and return the validation result for the frontend."""
         session.status = "confirming"
         payload = session.build_claim_payload()
 
-        result = self.validator.validate(payload)
-        session.validation_result = result.model_dump()
+        result = validate_claim(payload, clearinghouse_config=settings.clearinghouse_config)
+        session.validation_result = result
 
         return {
             "type": "validation_result",
             "content": preceding_message,
-            "result": session.validation_result,
+            "result": result,
             "claim_payload": payload,
         }
 
@@ -212,22 +220,33 @@ class ChatController:
         )
 
     def _parse_response(self, content: str) -> dict:
+        # 1. Try direct JSON parse
         try:
             return json.loads(content)
         except (json.JSONDecodeError, TypeError):
-            # Try to extract JSON from markdown code blocks
-            if "```json" in content:
-                start = content.index("```json") + 7
-                end = content.index("```", start)
+            pass
+
+        # 2. Try JSON inside ```json ... ``` or ``` ... ``` code blocks
+        for marker in ("```json", "```"):
+            if marker in content:
                 try:
+                    start = content.index(marker) + len(marker)
+                    end = content.index("```", start)
                     return json.loads(content[start:end].strip())
+                except (json.JSONDecodeError, ValueError, IndexError):
+                    pass
+
+        # 3. Try to find a JSON object anywhere in the response (handles
+        #    cases where OpenAI prefixes/suffixes plain text around JSON)
+        brace_start = content.find("{")
+        if brace_start != -1:
+            # Find the matching closing brace by scanning from the end
+            brace_end = content.rfind("}")
+            if brace_end > brace_start:
+                try:
+                    return json.loads(content[brace_start : brace_end + 1])
                 except (json.JSONDecodeError, ValueError):
                     pass
-            elif "```" in content:
-                start = content.index("```") + 3
-                end = content.index("```", start)
-                try:
-                    return json.loads(content[start:end].strip())
-                except (json.JSONDecodeError, ValueError):
-                    pass
-            return {"message": content, "extracted_fields": {}}
+
+        logger.warning("Could not parse JSON from OpenAI response: %.200s", content)
+        return {"message": content, "extracted_fields": {}}
